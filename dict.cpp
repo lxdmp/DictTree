@@ -225,7 +225,7 @@ void SubStrWithDict::setMinMatched()
 	_max_matched = false;
 }
 
-void SubStrWithDict::operator()(const std::string str)
+void SubStrWithDict::operator()(const std::string &str)
 {
 	this->operator()(str.c_str(), str.length());
 }
@@ -241,7 +241,7 @@ const SubStrWithDict::ResultType& SubStrWithDict::result() const
 	return this->_sub_strs;
 }
 
-std::string SubStrWithDict::try_match_once(const DictNode *root, const char *str, size_t len) const
+std::string SubStrWithDict::tryMatchOnce(const DictNode *root, const char *str, size_t len, bool max_matched)
 {
 	std::string ret;
 	size_t idx = 0;
@@ -258,7 +258,7 @@ std::string SubStrWithDict::try_match_once(const DictNode *root, const char *str
 		if(node->endOfWord())
 		{
 			ret = buf;
-			if(!_max_matched)
+			if(!max_matched)
 				break;
 		}
 	}
@@ -275,13 +275,117 @@ void SubStrWithDict::do_work(const char *str, size_t len, size_t start)
 			(node=_dict.subNode(str[idx++]))==NULL);
 		if(idx>=len || !node)
 			return;
-		std::string match_result = try_match_once(node, &str[idx], len-idx);
+		std::string match_result = SubStrWithDict::tryMatchOnce(node, &str[idx], len-idx, this->_max_matched);
 		if(!match_result.empty())
 		{
 			_sub_strs.push_back(std::make_pair(idx-1, match_result));
 			idx = idx-1+match_result.size();	
 		}
 	};
+}
+
+/*
+ * 利用字典树(Dict)实现所有的子串匹配组合
+ */
+SubCombineWithDict::SubCombineWithDict(const Dict &dict) : 
+	_dict(dict)
+{
+}
+
+void SubCombineWithDict::operator()(const std::string &str)
+{
+	this->operator()(str.c_str(), str.length());
+}
+
+struct SubCombineWithDictContext
+{
+	SubCombineWithDictContext(const char *str, size_t len) : 
+		_str(str), _len(len), _index(0)
+	{
+	}
+
+	SubCombineWithDictContext(const SubCombineWithDictContext &other) : 
+		_str(other._str), _len(other._len), _index(other._index)
+	{
+		_buf.assign(other._buf.begin(), other._buf.end());
+	}
+
+	SubStrWithDict::ResultType _buf;
+	const char *_str;
+	const size_t _len;
+	size_t _index;
+};
+
+static void SubCombineWithDictImpl(SubCombineWithDictContext&, const Dict&, SubCombineWithDict::ResultType&);
+void SubCombineWithDict::operator()(const char *str, size_t len)
+{
+	this->_sub_combines.clear();
+	SubCombineWithDictContext context(str, len);
+	SubCombineWithDictImpl(context, this->_dict, this->_sub_combines);
+}
+
+static std::vector<std::string> tryMatchOnce(const DictNode *root, const char *str, size_t len)
+{
+	std::vector<std::string> ret;
+	size_t idx = 0;
+	std::string buf;
+	const DictNode *node = root;
+	buf.push_back(node->ch());
+
+	while(idx<len)
+	{
+		node = node->subNode(str[idx++]);
+		if(!node)
+			break;
+		buf.push_back(node->ch());
+		if(node->endOfWord())
+		{
+			ret.push_back(buf);
+		}
+	}
+	return ret;
+}
+
+static void SubCombineWithDictImpl(
+	SubCombineWithDictContext &context, 
+	const Dict &dict, SubCombineWithDict::ResultType &result
+)
+{
+	const DictNode *node = NULL;
+	while(true)
+	{
+		while( context._index<context._len && 
+			(node=dict.subNode(context._str[context._index++]))==NULL );
+		if(context._index>=context._len || !node)
+		{
+			if(context._buf.size()>0)
+				result.push_back(context._buf);
+			return;
+		}
+
+		std::vector<std::string> match_results = tryMatchOnce(
+			node, &context._str[context._index], context._len-context._index);
+
+		if(match_results.size()>0)
+		{
+			for(size_t match_idx=0; match_idx<match_results.size(); ++match_idx)
+			{
+				const std::string &match_result = match_results[match_idx];
+
+				SubCombineWithDictContext new_context(context);
+				new_context._buf.push_back(std::make_pair(new_context._index-1, match_result));
+				new_context._index = new_context._index-1+match_result.size();
+				
+				SubCombineWithDictImpl(new_context, dict, result);
+			}
+			break;
+		}
+	}
+}
+
+const SubCombineWithDict::ResultType& SubCombineWithDict::result() const
+{
+	return this->_sub_combines;
 }
 
 #ifdef DICT_UNIT_TEST
@@ -337,17 +441,53 @@ int main()
 		"我去西湖博物馆看西湖", 
 		"西湖在西湖博物馆旁边"
 	};
-	SubStrWithDict query(dict);
-	//query.setMinMatched();
-	for(size_t i=0; i<sizeof(inputs)/sizeof(inputs[0]); ++i)
 	{
-		std::string input = inputs[i];
-		query(input);
-		const SubStrWithDict::ResultType &result = query.result();
-		std::cout<<"input : "<<input<<std::endl;
-		for(size_t i=0; i<result.size(); ++i)
-			std::cout<<result[i].first<<" : "<<result[i].second<<std::endl;
+		std::cout<<std::endl<<"SubStrWithDict Test:"<<std::endl;
+		SubStrWithDict query(dict);
+		bool max_matched = true;
+		if(max_matched)
+		{
+			std::cout<<"max matched case"<<std::endl;
+			query.setMaxMatched();
+		}else{
+			std::cout<<"min matched case"<<std::endl;
+			query.setMinMatched();
+		}
+		for(size_t i=0; i<sizeof(inputs)/sizeof(inputs[0]); ++i)
+		{
+			std::string input = inputs[i];
+			query(input);
+			const SubStrWithDict::ResultType &result = query.result();
+			std::cout<<"input : "<<input<<std::endl;
+			for(size_t i=0; i<result.size(); ++i)
+				std::cout<<result[i].first<<" : "<<result[i].second<<std::endl;
+		}
 	}
+	{
+		std::cout<<std::endl<<"SubCombineWithDict Test:"<<std::endl;
+		SubCombineWithDict query(dict);
+		for(size_t i=0; i<sizeof(inputs)/sizeof(inputs[0]); ++i)
+		{
+			std::string input = inputs[i];
+			query(input);
+			const SubCombineWithDict::ResultType &result = query.result();
+			std::cout<<"input : "<<input<<std::endl;
+			for(size_t result_idx=0; result_idx<result.size(); ++result_idx)
+			{
+				const SubStrWithDict::ResultType sub_result = result[result_idx];
+				for(size_t sub_result_idx=0; sub_result_idx<sub_result.size(); ++sub_result_idx)
+				{
+					if(sub_result_idx>0)
+						std::cout<<", ";
+					std::cout<<sub_result[sub_result_idx].first
+						<<" : "
+						<<sub_result[sub_result_idx].second;
+				}
+				std::cout<<std::endl;
+			}
+		}
+	}
+	
 	return 0;
 }
 #endif
