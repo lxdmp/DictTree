@@ -401,7 +401,8 @@ int main()
 		"abd"
 		*/
 		"西湖", 
-		"西湖博物馆"
+		"西湖博物馆", 
+		"博物馆"
 	};
 	for(size_t word_idx=0; word_idx<sizeof(dict_words)/sizeof(dict_words[0]); ++word_idx)
 	{
@@ -441,10 +442,13 @@ int main()
 		"我去西湖博物馆看西湖", 
 		"西湖在西湖博物馆旁边"
 	};
+
+	for(int i=0; i<2; ++i)
 	{
 		std::cout<<std::endl<<"SubStrWithDict Test:"<<std::endl;
 		SubStrWithDict query(dict);
-		bool max_matched = true;
+		bool max_matched_cases[] = {true, false};
+		bool max_matched = max_matched_cases[i];
 		if(max_matched)
 		{
 			std::cout<<"max matched case"<<std::endl;
